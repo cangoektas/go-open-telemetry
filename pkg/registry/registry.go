@@ -10,7 +10,7 @@ type UnregisterRequest struct {
 }
 
 type Registry struct {
-	AddrByName map[string]string
+	AddrByName map[string]string `json:"addrByName"`
 }
 
 func New() *Registry {

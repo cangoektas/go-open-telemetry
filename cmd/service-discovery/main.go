@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
-	"io"
+	"fmt"
 	"net/http"
 
+	"github.com/cangoektas/go-open-telemetry/internal/helper"
 	"github.com/cangoektas/go-open-telemetry/pkg/registry"
 )
 
@@ -13,7 +15,7 @@ var reg = registry.New()
 func main() {
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/unregister", unregister)
-	http.HandleFunc("/services", services)
+	http.HandleFunc("/registry", getRegistry)
 
 	http.ListenAndServe("localhost:8090", nil)
 }
@@ -22,12 +24,13 @@ func register(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	reqJson := &registry.RegisterRequest{}
-	_, err := readJson(req, reqJson)
+	err := helper.JsonRead(req.Body, reqJson)
 	if err != nil {
 		panic(err)
 	}
 
 	reg.Register(reqJson.Name, reqJson.Addr)
+	go updateServices()
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -36,20 +39,21 @@ func unregister(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
 	reqJson := &registry.UnregisterRequest{}
-	_, err := readJson(req, reqJson)
+	err := helper.JsonRead(req.Body, reqJson)
 	if err != nil {
 		panic(err)
 	}
 
 	reg.Unregister(reqJson.Name)
+	go updateServices()
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func services(w http.ResponseWriter, req *http.Request) {
+func getRegistry(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	respJson, err := json.Marshal(reg.AddrByName)
+	respJson, err := json.Marshal(reg)
 	if err != nil {
 		panic(err)
 	}
@@ -57,16 +61,19 @@ func services(w http.ResponseWriter, req *http.Request) {
 	w.Write(respJson)
 }
 
-func readJson[T any](req *http.Request, res T) (any, error) {
-	body, err := io.ReadAll(req.Body)
+func updateServices() {
+	for name, addr := range reg.AddrByName {
+		name := name
+		addr := addr
+		go updateService(name, addr)
+	}
+}
+
+func updateService(name string, addr string) (*http.Response, error) {
+	body, err := json.Marshal(reg)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	err = json.Unmarshal(body, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return nil, nil
+	return http.Post(fmt.Sprintf("http://%s/registry", addr), "application/json", bytes.NewBuffer(body))
 }
