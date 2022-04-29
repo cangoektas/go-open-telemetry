@@ -1,15 +1,15 @@
 {
 	"Name": "Poll",
 	"SpanContext": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "1633698709c8cbff",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "5260b6e356e3dfa5",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
 	},
 	"Parent": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "f8c2f9d8ff7e2a0e",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "484555ea313f1470",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
@@ -22,7 +22,7 @@
 			"Key": "request.n",
 			"Value": {
 				"Type": "STRING",
-				"Value": "42"
+				"Value": "100"
 			}
 		}
 	],
@@ -46,15 +46,15 @@
 {
 	"Name": "Fibonacci",
 	"SpanContext": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "32463d2b1d5446fd",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "1b25660eb91b1870",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
 	},
 	"Parent": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "03b66ad9da8fcfb3",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "96b615c7ef8adf7b",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
@@ -63,11 +63,33 @@
 	"StartTime": "0001-01-01T00:00:00Z",
 	"EndTime": "0001-01-01T00:00:00Z",
 	"Attributes": null,
-	"Events": null,
+	"Events": [
+		{
+			"Name": "exception",
+			"Attributes": [
+				{
+					"Key": "exception.type",
+					"Value": {
+						"Type": "STRING",
+						"Value": "*errors.errorString"
+					}
+				},
+				{
+					"Key": "exception.message",
+					"Value": {
+						"Type": "STRING",
+						"Value": "unsupported fibonacci number 100: too large"
+					}
+				}
+			],
+			"DroppedAttributeCount": 0,
+			"Time": "0001-01-01T00:00:00Z"
+		}
+	],
 	"Links": null,
 	"Status": {
-		"Code": "Unset",
-		"Description": ""
+		"Code": "Error",
+		"Description": "unsupported fibonacci number 100: too large"
 	},
 	"DroppedAttributes": 0,
 	"DroppedEvents": 0,
@@ -83,15 +105,15 @@
 {
 	"Name": "Write",
 	"SpanContext": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "03b66ad9da8fcfb3",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "96b615c7ef8adf7b",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
 	},
 	"Parent": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "f8c2f9d8ff7e2a0e",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "484555ea313f1470",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false
@@ -120,8 +142,8 @@
 {
 	"Name": "Run",
 	"SpanContext": {
-		"TraceID": "ccc730037227574f74850e720524d1db",
-		"SpanID": "f8c2f9d8ff7e2a0e",
+		"TraceID": "3f0167f6f21a8d32652a2ee2e8d4f778",
+		"SpanID": "484555ea313f1470",
 		"TraceFlags": "01",
 		"TraceState": "",
 		"Remote": false

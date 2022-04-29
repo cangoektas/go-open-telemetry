@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	otelSdkTrace "go.opentelemetry.io/otel/sdk/trace"
@@ -20,10 +21,15 @@ import (
 
 const serviceName = "fib"
 
-// Fibonacci returns the n-th fibonacci number.
+// Fibonacci returns the n-th fibonacci number. An error is returned if the
+// fibonacci number cannot be represented as a uint64.
 func Fibonacci(n uint) (uint64, error) {
 	if n <= 1 {
 		return uint64(n), nil
+	}
+
+	if n > 93 {
+		return 0, fmt.Errorf("unsupported fibonacci number %d: too large", n)
 	}
 
 	var n2, n1 uint64 = 0, 1
@@ -71,12 +77,17 @@ func (a *App) Poll(ctx context.Context) (uint, error) {
 
 	var n uint
 	_, err := fmt.Fscanf(a.r, "%d\n", &n)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return 0, err
+	}
 
 	// Store n as a string to not overflow an int64.
 	nStr := strconv.FormatUint(uint64(n), 10)
 	span.SetAttributes(attribute.String("request.n", nStr))
 
-	return n, err
+	return n, nil
 }
 
 // Write writes the n-th Fibonacci number back to the user.
@@ -88,7 +99,12 @@ func (a *App) Write(ctx context.Context, n uint) {
 	f, err := func(ctx context.Context) (uint64, error) {
 		_, span := otel.Tracer(serviceName).Start(ctx, "Fibonacci")
 		defer span.End()
-		return Fibonacci(n)
+		f, err := Fibonacci(n)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		return f, err
 	}(ctx)
 	if err != nil {
 		a.l.Printf("Fibonacci(%d): %v\n", n, err)
