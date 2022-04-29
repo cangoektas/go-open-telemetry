@@ -11,10 +11,14 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	otelSdkTrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
-const name = "fib"
+const serviceName = "fib"
 
 // Fibonacci returns the n-th fibonacci number.
 func Fibonacci(n uint) (uint64, error) {
@@ -45,7 +49,7 @@ func NewApp(r io.Reader, l *log.Logger) *App {
 func (a *App) Run(ctx context.Context) error {
 	for {
 		// Each execution of the run loop, we should get a new "root" span and context.
-		newCtx, span := otel.Tracer(name).Start(ctx, "Run")
+		newCtx, span := otel.Tracer(serviceName).Start(ctx, "Run")
 
 		n, err := a.Poll(newCtx)
 		if err != nil {
@@ -60,7 +64,7 @@ func (a *App) Run(ctx context.Context) error {
 
 // Poll asks a user for input and returns the request.
 func (a *App) Poll(ctx context.Context) (uint, error) {
-	_, span := otel.Tracer(name).Start(ctx, "Poll")
+	_, span := otel.Tracer(serviceName).Start(ctx, "Poll")
 	defer span.End()
 
 	a.l.Print("What Fibonacci number would you like to know: ")
@@ -78,11 +82,11 @@ func (a *App) Poll(ctx context.Context) (uint, error) {
 // Write writes the n-th Fibonacci number back to the user.
 func (a *App) Write(ctx context.Context, n uint) {
 	var span trace.Span
-	ctx, span = otel.Tracer(name).Start(ctx, "Write")
+	ctx, span = otel.Tracer(serviceName).Start(ctx, "Write")
 	defer span.End()
 
 	f, err := func(ctx context.Context) (uint64, error) {
-		_, span := otel.Tracer(name).Start(ctx, "Fibonacci")
+		_, span := otel.Tracer(serviceName).Start(ctx, "Fibonacci")
 		defer span.End()
 		return Fibonacci(n)
 	}(ctx)
@@ -93,8 +97,56 @@ func (a *App) Write(ctx context.Context, n uint) {
 	}
 }
 
+// newExporter returns a console exporter.
+func newExporter(w io.Writer) (otelSdkTrace.SpanExporter, error) {
+	return stdouttrace.New(
+		stdouttrace.WithWriter(w),
+		// Use human-readable output.
+		stdouttrace.WithPrettyPrint(),
+		// Do not print timestamps for the demo.
+		stdouttrace.WithoutTimestamps(),
+	)
+}
+
+// newResource returns a resource describing this application.
+func newResource() *resource.Resource {
+	r, _ := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceVersionKey.String("v0.1.0"),
+			attribute.String("environment", "demo"),
+		),
+	)
+	return r
+}
+
 func main() {
 	l := log.New(os.Stdout, "", 0)
+
+	// Write telemetry data to a file.
+	f, err := os.Create("traces.txt")
+	if err != nil {
+		l.Fatal(err)
+	}
+	defer f.Close()
+
+	exp, err := newExporter(f)
+	if err != nil {
+		l.Fatal(err)
+	}
+
+	tp := otelSdkTrace.NewTracerProvider(
+		otelSdkTrace.WithBatcher(exp),
+		otelSdkTrace.WithResource(newResource()),
+	)
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			l.Fatal(err)
+		}
+	}()
+	otel.SetTracerProvider(tp)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
