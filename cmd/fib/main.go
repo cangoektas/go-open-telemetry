@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
+	"syscall"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,11 +19,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	otelSdkTrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
-	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "fib-tracer"
-const serviceName = "fib"
+const name = "fib"
 
 // Fibonacci returns the n-th fibonacci number. An error is returned if the
 // fibonacci number cannot be represented as a uint64.
@@ -41,84 +42,11 @@ func Fibonacci(n uint) (uint64, error) {
 	return n2 + n1, nil
 }
 
-// App is a Fibonacci computation application.
-type App struct {
-	r io.Reader
-	l *log.Logger
-}
-
-// NewApp returns a new App.
-func NewApp(r io.Reader, l *log.Logger) *App {
-	return &App{r: r, l: l}
-}
-
-// Run starts polling users for Fibonacci number requests and writes results.
-func (a *App) Run(ctx context.Context) error {
-	for {
-		// Each execution of the run loop, we should get a new "root" span and context.
-		newCtx, span := otel.Tracer(tracerName).Start(ctx, "Run")
-
-		n, err := a.Poll(newCtx)
-		if err != nil {
-			span.End()
-			return err
-		}
-
-		a.Write(newCtx, n)
-		span.End()
-	}
-}
-
-// Poll asks a user for input and returns the request.
-func (a *App) Poll(ctx context.Context) (uint, error) {
-	_, span := otel.Tracer(tracerName).Start(ctx, "Poll")
-	defer span.End()
-
-	a.l.Print("What Fibonacci number would you like to know: ")
-
-	var n uint
-	_, err := fmt.Fscanf(a.r, "%d\n", &n)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return 0, err
-	}
-
-	// Store n as a string to not overflow an int64.
-	nStr := strconv.FormatUint(uint64(n), 10)
-	span.SetAttributes(attribute.String("request.n", nStr))
-
-	return n, nil
-}
-
-// Write writes the n-th Fibonacci number back to the user.
-func (a *App) Write(ctx context.Context, n uint) {
-	var span trace.Span
-	ctx, span = otel.Tracer(tracerName).Start(ctx, "Write")
-	defer span.End()
-
-	f, err := func(ctx context.Context) (uint64, error) {
-		_, span := otel.Tracer(tracerName).Start(ctx, "Fibonacci")
-		defer span.End()
-		f, err := Fibonacci(n)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		return f, err
-	}(ctx)
-	if err != nil {
-		a.l.Printf("Fibonacci(%d): %v\n", n, err)
-	} else {
-		a.l.Printf("Fibonacci(%d) = %d\n", n, f)
-	}
-}
-
 func main() {
 	l := log.New(os.Stdout, "", 0)
 
 	exp, err := zipkin.New(
-		"http://localhost:9411/api/v2/spans",
+		"http://zipkin:9411/api/v2/spans",
 		zipkin.WithLogger(l),
 	)
 	if err != nil {
@@ -129,7 +57,7 @@ func main() {
 		otelSdkTrace.WithBatcher(exp),
 		otelSdkTrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(serviceName),
+			semconv.ServiceNameKey.String(name),
 		)),
 	)
 	defer func() {
@@ -139,22 +67,92 @@ func main() {
 	}()
 	otel.SetTracerProvider(tp)
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signals := make(chan os.Signal, 1)
+	done := make(chan bool, 1)
+	port := 8080
+	if value, exists := os.LookupEnv("PORT"); exists {
+		i, err := strconv.Atoi(value)
 
-	errCh := make(chan error)
-	app := NewApp(os.Stdin, l)
-	go func() {
-		errCh <- app.Run(context.Background())
-	}()
-
-	select {
-	case <-sigCh:
-		l.Println("\ngoodbye")
-		return
-	case err := <-errCh:
-		if err != nil {
-			l.Fatal(err)
+		if err == nil {
+			port = i
 		}
 	}
+
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/fib/", fib)
+
+	server := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux}
+
+	go func() {
+		fmt.Printf("Starting server at %d\n", port)
+
+		if err := server.ListenAndServe(); err != nil {
+			if err != http.ErrServerClosed {
+				panic(err)
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go func() {
+		<-signals
+		server.Shutdown(ctx)
+		done <- true
+	}()
+
+	<-done
+}
+
+func parseN(req *http.Request) (int, error) {
+	nStr := strings.TrimPrefix(req.URL.Path, "/fib/")
+	return strconv.Atoi(nStr)
+}
+
+func fib(w http.ResponseWriter, req *http.Request) {
+	newCtx, span := otel.Tracer(name).Start(req.Context(), "fib")
+	defer span.End()
+
+	defer req.Body.Close()
+
+	n, err := func(ctx context.Context, req *http.Request) (int, error) {
+		_, span := otel.Tracer(name).Start(ctx, "parseN")
+		defer span.End()
+
+		n, err := parseN(req)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+
+		span.SetAttributes(attribute.String("request.n", fmt.Sprintf("%d", n)))
+
+		return n, err
+	}(newCtx, req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	f, err := func(ctx context.Context) (uint64, error) {
+		_, span := otel.Tracer(name).Start(ctx, "Fibonacci")
+		defer span.End()
+
+		f, err := Fibonacci(uint(n))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+
+		return f, err
+	}(newCtx)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(strconv.Itoa(int(f)) + "\n"))
 }
