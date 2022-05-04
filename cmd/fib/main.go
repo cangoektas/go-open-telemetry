@@ -45,8 +45,13 @@ func Fibonacci(n uint) (uint64, error) {
 func main() {
 	l := log.New(os.Stdout, "", 0)
 
-	exp, err := zipkin.New(
-		"http://zipkin:9411/api/v2/spans",
+	zipkinEndpoint, ok := os.LookupEnv("ZIPKIN_ENDPOINT")
+	if !ok {
+		zipkinEndpoint = "http://localhost:9411/api/v2/spans"
+	}
+
+	zipkinExp, err := zipkin.New(
+		zipkinEndpoint,
 		zipkin.WithLogger(l),
 	)
 	if err != nil {
@@ -54,7 +59,7 @@ func main() {
 	}
 
 	tp := otelSdkTrace.NewTracerProvider(
-		otelSdkTrace.WithBatcher(exp),
+		otelSdkTrace.WithBatcher(zipkinExp),
 		otelSdkTrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(name),
