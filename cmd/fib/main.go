@@ -1,3 +1,7 @@
+// TODO:
+// 1. What does WithBatcher do?
+// 2. What does the default sampler do?
+// 3. What are span limits?
 package main
 
 import (
@@ -58,6 +62,8 @@ func main() {
 		l.Fatal(err)
 	}
 
+	// A `TracerProvider`` is a centralized point where instrumentation will get
+	// a `Tracer` from to funnel telemetry data to exporters
 	tp := otelSdkTrace.NewTracerProvider(
 		otelSdkTrace.WithBatcher(zipkinExp),
 		otelSdkTrace.WithResource(resource.NewWithAttributes(
@@ -70,6 +76,12 @@ func main() {
 			l.Fatal(err)
 		}
 	}()
+	// Register the created `TracerProvider` globally. This pattern is
+	// convenient, but not always appropriate. `TracerProvider`s can be
+	// explicitly passed to instrumentation or inferred from a context. For this
+	// example using a global provider makes sense, but for more complex or
+	// distributed codebases, other ways of passing `TracerProvider`s may make
+	// more sense.
 	otel.SetTracerProvider(tp)
 
 	signals := make(chan os.Signal, 1)
