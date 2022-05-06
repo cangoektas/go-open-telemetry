@@ -18,8 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/resource"
 	otelSdkTrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -53,9 +52,7 @@ func main() {
 	// exporter is configured using a client satisfying the otlptrace.Client
 	// interface. This client handles the transformation of data into wire
 	// format and the transmission of that data to the collector.
-	client := otlptracehttp.NewClient()
-	exp, err := otlptrace.New(context.Background(), client)
-
+	exp, err := otlptracegrpc.New(context.Background())
 	if err != nil {
 		l.Fatal(err)
 	}
