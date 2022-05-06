@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: fib.Dockerfile
     environment:
-      - ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
     ports:
       - "8080:8080"
   zipkin:

@@ -1,5 +1,4 @@
 // TODO:
-// 1. What does WithBatcher do?
 // 2. What does the default sampler do?
 // 3. What are span limits?
 package main
@@ -25,8 +24,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
-const name = "fib"
-
 // Fibonacci returns the n-th fibonacci number. An error is returned if the
 // fibonacci number cannot be represented as a uint64.
 func Fibonacci(n uint) (uint64, error) {
@@ -49,26 +46,33 @@ func Fibonacci(n uint) (uint64, error) {
 func main() {
 	l := log.New(os.Stdout, "", 0)
 
-	zipkinEndpoint, ok := os.LookupEnv("ZIPKIN_ENDPOINT")
-	if !ok {
-		zipkinEndpoint = "http://localhost:9411/api/v2/spans"
-	}
-
+	// Exporters are packages that allow telemetry data to be emitted somewhere
+	// - either to the console, or to a remote system or collector for further
+	// analysis and/or enrichment. Here, we create a Zipkin exporter.
 	zipkinExp, err := zipkin.New(
-		zipkinEndpoint,
+		"", // Use env variable OTEL_EXPORTER_ZIPKIN_ENDPOINT or default URL
 		zipkin.WithLogger(l),
 	)
 	if err != nil {
 		l.Fatal(err)
 	}
 
-	// A `TracerProvider`` is a centralized point where instrumentation will get
-	// a `Tracer` from to funnel telemetry data to exporters
+	// A `TracerProvider` is a centralized point where instrumentation will get
+	// a `Tracer` from to send telemetry data to. Here, we configure a
+	// `TraceProvider` so that the received data is forwarded to exporters.
 	tp := otelSdkTrace.NewTracerProvider(
+		// `WithBatcher` creates a `BatchSpanProcessor` that receives spans
+		// asynchronously and forwards them in batches to an exporter in a
+		// regular interval
 		otelSdkTrace.WithBatcher(zipkinExp),
+		// OpenTelemetry uses a `Resource` to represent the entity producing
+		// telemetry. The configured `Resource` is referenced by all the
+		// `Tracer`s the `TracerProvider` creates. Note that the configured
+		// service name is different to the library names that we use later
+		// on.
 		otelSdkTrace.WithResource(resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceNameKey.String(name),
+			semconv.ServiceNameKey.String("fib-srv"),
 		)),
 	)
 	defer func() {
@@ -124,30 +128,42 @@ func main() {
 	<-done
 }
 
-func parseN(req *http.Request) (int, error) {
-	nStr := strings.TrimPrefix(req.URL.Path, "/fib/")
-	return strconv.Atoi(nStr)
+func parseNum(req *http.Request) (int, error) {
+	numStr := strings.TrimPrefix(req.URL.Path, "/fib/")
+	return strconv.Atoi(numStr)
 }
 
 func fib(w http.ResponseWriter, req *http.Request) {
-	newCtx, span := otel.Tracer(name).Start(req.Context(), "fib")
+	// Retrieve an appropriately named `Tracer` from the global
+	// `TracerProvider`. These `Tracer`s are designed to be associated with one
+	// instrumentation library. That way, telemetry they produce can be
+	// understood to come from that part of a code base.
+	// The `Start` function creates a named `Span` and returns a new context.
+	// Any new spans created based on the new context, will be children of
+	// the created span. If no previous span exists in the current context,
+	// the created span will be the "root".
+	newCtx, span := otel.Tracer("fib-lib").Start(req.Context(), "fib")
 	defer span.End()
 
 	defer req.Body.Close()
 
-	n, err := func(ctx context.Context, req *http.Request) (int, error) {
-		_, span := otel.Tracer(name).Start(ctx, "parseN")
+	num, err := func(ctx context.Context, req *http.Request) (int, error) {
+		_, span := otel.Tracer("fib-lib").Start(ctx, "parseNum")
 		defer span.End()
 
-		n, err := parseN(req)
+		num, err := parseNum(req)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
 
-		span.SetAttributes(attribute.String("request.n", fmt.Sprintf("%d", n)))
+		// Adds an attribute to annotate the span. This annotation is something
+		// you can add when you think a user of your application will want to
+		// see the state or details about the run environment when looking at
+		// telemetry.
+		span.SetAttributes(attribute.String("num", fmt.Sprintf("%d", num)))
 
-		return n, err
+		return num, err
 	}(newCtx, req)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -155,10 +171,10 @@ func fib(w http.ResponseWriter, req *http.Request) {
 	}
 
 	f, err := func(ctx context.Context) (uint64, error) {
-		_, span := otel.Tracer(name).Start(ctx, "Fibonacci")
+		_, span := otel.Tracer("fib-lib").Start(ctx, "Fibonacci")
 		defer span.End()
 
-		f, err := Fibonacci(uint(n))
+		f, err := Fibonacci(uint(num))
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
