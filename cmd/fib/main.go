@@ -18,7 +18,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/exporters/zipkin"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
 	otelSdkTrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -48,26 +49,28 @@ func main() {
 
 	// Exporters are packages that allow telemetry data to be emitted somewhere
 	// - either to the console, or to a remote system or collector for further
-	// analysis and/or enrichment. Here, we create a Zipkin exporter.
-	zipkinExp, err := zipkin.New(
-		"", // Use env variable OTEL_EXPORTER_ZIPKIN_ENDPOINT or default URL
-		zipkin.WithLogger(l),
-	)
+	// analysis and/or enrichment. Here, we create an OTLP exporter. This
+	// exporter is configured using a client satisfying the otlptrace.Client
+	// interface. This client handles the transformation of data into wire
+	// format and the transmission of that data to the collector.
+	client := otlptracehttp.NewClient()
+	exp, err := otlptrace.New(context.Background(), client)
+
 	if err != nil {
 		l.Fatal(err)
 	}
 
-	// A `TracerProvider` is a centralized point where instrumentation will get
-	// a `Tracer` from to send telemetry data to. Here, we configure a
-	// `TraceProvider` so that the received data is forwarded to exporters.
+	// A TracerProvider is a centralized point where instrumentation will get a
+	// Tracer from to send telemetry data to. Here, we configure a TraceProvider
+	// so that the received data is forwarded to exporters.
 	tp := otelSdkTrace.NewTracerProvider(
-		// `WithBatcher` creates a `BatchSpanProcessor` that receives spans
+		// WithBatcher creates a BatchSpanProcessor that receives spans
 		// asynchronously and forwards them in batches to an exporter in a
 		// regular interval
-		otelSdkTrace.WithBatcher(zipkinExp),
-		// OpenTelemetry uses a `Resource` to represent the entity producing
-		// telemetry. The configured `Resource` is referenced by all the
-		// `Tracer`s the `TracerProvider` creates. Note that the configured
+		otelSdkTrace.WithBatcher(exp),
+		// OpenTelemetry uses a Resource to represent the entity producing
+		// telemetry. The configured Resource is referenced by all the
+		// Tracers the TracerProvider creates. Note that the configured
 		// service name is different to the library names that we use later
 		// on.
 		otelSdkTrace.WithResource(resource.NewWithAttributes(
@@ -80,11 +83,11 @@ func main() {
 			l.Fatal(err)
 		}
 	}()
-	// Register the created `TracerProvider` globally. This pattern is
-	// convenient, but not always appropriate. `TracerProvider`s can be
+	// Register the created TracerProvider globally. This pattern is
+	// convenient, but not always appropriate. TracerProviders can be
 	// explicitly passed to instrumentation or inferred from a context. For this
 	// example using a global provider makes sense, but for more complex or
-	// distributed codebases, other ways of passing `TracerProvider`s may make
+	// distributed codebases, other ways of passing TracerProviders may make
 	// more sense.
 	otel.SetTracerProvider(tp)
 
@@ -134,11 +137,11 @@ func parseNum(req *http.Request) (int, error) {
 }
 
 func fib(w http.ResponseWriter, req *http.Request) {
-	// Retrieve an appropriately named `Tracer` from the global
-	// `TracerProvider`. These `Tracer`s are designed to be associated with one
+	// Retrieve an appropriately named Tracer from the global
+	// TracerProvider. These Tracers are designed to be associated with one
 	// instrumentation library. That way, telemetry they produce can be
 	// understood to come from that part of a code base.
-	// The `Start` function creates a named `Span` and returns a new context.
+	// The Start function creates a named Span and returns a new context.
 	// Any new spans created based on the new context, will be children of
 	// the created span. If no previous span exists in the current context,
 	// the created span will be the "root".

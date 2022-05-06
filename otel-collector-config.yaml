@@ -1,5 +1,7 @@
 receivers:
-  zipkin:
+  otlp:
+    protocols:
+      http:
 
 processors:
   batch:
@@ -14,6 +16,6 @@ exporters:
 service:
   pipelines:
     traces:
-      receivers: [zipkin]
+      receivers: [otlp]
       processors: [batch]
       exporters: [logging, zipkin]

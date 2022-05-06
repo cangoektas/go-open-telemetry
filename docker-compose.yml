@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: fib.Dockerfile
     environment:
-      - OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://collector:9411/api/v2/spans
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
     ports:
       - 8080:8080
     depends_on:
