@@ -1,0 +1,19 @@
+receivers:
+  zipkin:
+
+processors:
+  batch:
+
+exporters:
+  logging:
+
+  zipkin:
+    endpoint: "${OTEL_EXPORTER_ZIPKIN_ENDPOINT}"
+    format: proto
+
+service:
+  pipelines:
+    traces:
+      receivers: [zipkin]
+      processors: [batch]
+      exporters: [logging, zipkin]

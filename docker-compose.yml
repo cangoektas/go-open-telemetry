@@ -5,10 +5,25 @@ services:
       context: .
       dockerfile: fib.Dockerfile
     environment:
-      - OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
+      - OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://collector:9411/api/v2/spans
     ports:
       - 8080:8080
     depends_on:
+      # Wait until collector is running before starting this service.
+      # NOTE: This only waits until the container is running and not until it's
+      # processes are ready
+      - collector
+  collector:
+    image: otel/opentelemetry-collector
+    environment:
+      - OTEL_EXPORTER_ZIPKIN_ENDPOINT=http://zipkin:9411/api/v2/spans
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    depends_on:
+      # Wait until zipkin is running before starting this service.
+      # NOTE: This only waits until the container is running and not until it's
+      # processes are ready
       - zipkin
   zipkin:
     image: openzipkin/zipkin
