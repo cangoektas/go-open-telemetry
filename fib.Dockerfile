@@ -5,7 +5,6 @@ COPY go.sum ./
 RUN go mod download
 COPY ./cmd/fib/*.go ./
 RUN go build -o ./fib
-RUN ls
 
 FROM alpine
 WORKDIR /app
