@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,9 +25,22 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
+var sleepEndpoint string
+var r *rand.Rand
+
+func randIntn(n int) int {
+	s := rand.NewSource(time.Now().UnixNano())
+	r = rand.New(s)
+
+	return r.Intn(n)
+}
+
 // Fibonacci returns the n-th fibonacci number. An error is returned if the
 // fibonacci number cannot be represented as a uint64.
 func Fibonacci(n uint) (uint64, error) {
+	// Sleep a random time 0 <= n < 100
+	time.Sleep(time.Duration(randIntn(100)) * time.Millisecond)
+
 	if n <= 1 {
 		return uint64(n), nil
 	}
@@ -99,6 +113,12 @@ func main() {
 		}
 	}
 
+	if _, ok := os.LookupEnv("SLEEP_ENDPOINT"); ok {
+		sleepEndpoint = os.Getenv("SLEEP_ENDPOINT")
+	} else {
+		sleepEndpoint = "http://localhost:8081/sleep/"
+	}
+
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
 	mux := http.NewServeMux()
@@ -129,8 +149,21 @@ func main() {
 }
 
 func parseNum(req *http.Request) (int, error) {
+	// Sleep a random time 0 <= n < 100
+	time.Sleep(time.Duration(randIntn(100)) * time.Millisecond)
+
 	numStr := strings.TrimPrefix(req.URL.Path, "/fib/")
 	return strconv.Atoi(numStr)
+}
+
+func requestSleep(n int) error {
+	resp, err := http.Get(fmt.Sprintf("%s/%d", sleepEndpoint, n))
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	return err
 }
 
 func fib(w http.ResponseWriter, req *http.Request) {
@@ -146,6 +179,25 @@ func fib(w http.ResponseWriter, req *http.Request) {
 	defer span.End()
 
 	defer req.Body.Close()
+
+	err := func(ctx context.Context, req *http.Request) error {
+		_, span := otel.Tracer("fib-lib").Start(ctx, "sleep")
+		defer span.End()
+
+		// Sleep a random time by calling the sleep service. By doing this, we'll be
+		// able to test context propagation later on.
+		err := requestSleep(randIntn(100))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+
+		return err
+	}(newCtx, req)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
 	num, err := func(ctx context.Context, req *http.Request) (int, error) {
 		_, span := otel.Tracer("fib-lib").Start(ctx, "parseNum")

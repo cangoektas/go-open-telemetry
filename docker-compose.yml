@@ -3,9 +3,13 @@ services:
   fib:
     build:
       context: .
-      dockerfile: fib.Dockerfile
+      dockerfile: Dockerfile
+      args:
+        name: fib
     environment:
+      - PORT=8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
+      - SLEEP_ENDPOINT=http://sleep:8081/sleep/
     ports:
       - 8080:8080
     depends_on:
@@ -13,6 +17,17 @@ services:
       # NOTE: This only waits until the container is running and not until it's
       # processes are ready
       - collector
+      - sleep
+  sleep:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        name: sleep
+    environment:
+      - PORT=8081
+    ports:
+      - 8081:8081
   collector:
     image: otel/opentelemetry-collector
     environment:
