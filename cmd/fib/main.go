@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -58,8 +57,6 @@ func Fibonacci(n uint) (uint64, error) {
 }
 
 func main() {
-	l := log.New(os.Stdout, "", 0)
-
 	// Exporters are packages that allow telemetry data to be emitted somewhere
 	// - either to the console, or to a remote system or collector for further
 	// analysis and/or enrichment. Here, we create an OTLP exporter. This
@@ -68,7 +65,7 @@ func main() {
 	// format and the transmission of that data to the collector.
 	exp, err := otlptracegrpc.New(context.Background())
 	if err != nil {
-		l.Fatal(err)
+		panic(err)
 	}
 
 	// A TracerProvider is a centralized point where instrumentation will get a
@@ -91,7 +88,7 @@ func main() {
 	)
 	defer func() {
 		if err := tp.Shutdown(context.Background()); err != nil {
-			l.Fatal(err)
+			panic(err)
 		}
 	}()
 	// Register the created TracerProvider globally. This pattern is
@@ -175,7 +172,7 @@ func fib(w http.ResponseWriter, req *http.Request) {
 	// Any new spans created based on the new context, will be children of
 	// the created span. If no previous span exists in the current context,
 	// the created span will be the "root".
-	newCtx, span := otel.Tracer("fib-lib").Start(req.Context(), "fib")
+	newCtx, span := otel.Tracer("fib-lib").Start(req.Context(), "fib-handler")
 	defer span.End()
 
 	defer req.Body.Close()

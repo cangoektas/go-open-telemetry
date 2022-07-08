@@ -26,8 +26,14 @@ services:
         name: sleep
     environment:
       - PORT=8081
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317
     ports:
       - 8081:8081
+    depends_on:
+      # Wait until collector is running before starting this service.
+      # NOTE: This only waits until the container is running and not until it's
+      # processes are ready
+      - collector
   collector:
     image: otel/opentelemetry-collector
     environment:
